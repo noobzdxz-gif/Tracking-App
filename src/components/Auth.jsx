@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
 export default function Auth() {
@@ -42,46 +42,50 @@ export default function Auth() {
     };
 
     return (
-        <div className="min-h-screen bg-black flex items-center justify-center p-4">
-            <Card className="w-full max-w-md bg-black border-2 border-white shadow-[8px_8px_0px_0px_rgba(255,255,255,1)]">
-                <CardHeader className="bg-white text-black p-6 border-b-2 border-white">
-                    <CardTitle className="text-3xl font-black tracking-tighter text-center">
-                        {isSignUp ? 'CREATE ACCOUNT' : 'LOGIN'}
+        <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+            <Card className="w-full max-w-md border-zinc-800 bg-zinc-900/50">
+                <CardHeader className="space-y-1">
+                    <CardTitle className="text-2xl font-bold tracking-tight text-white text-center">
+                        {isSignUp ? 'Create an account' : 'Welcome back'}
                     </CardTitle>
+                    <CardDescription className="text-center text-zinc-400">
+                        {isSignUp ? 'Enter your email below to create your account' : 'Enter your email below to login to your account'}
+                    </CardDescription>
                 </CardHeader>
-                <CardContent className="p-8 text-white">
+                <CardContent className="grid gap-4">
                     <form onSubmit={handleAuth} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-bold mb-2 text-gray-400">EMAIL</label>
+                        <div className="grid gap-2">
+                            <label htmlFor="email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-200">Email</label>
                             <Input
+                                id="email"
                                 type="email"
+                                placeholder="m@example.com"
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="bg-black border-white text-white"
-                                placeholder="you@example.com"
+                                className="bg-zinc-950/50 border-zinc-700 focus-visible:ring-zinc-600"
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-bold mb-2 text-gray-400">PASSWORD</label>
+                        <div className="grid gap-2">
+                            <label htmlFor="password" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-200">Password</label>
                             <Input
+                                id="password"
                                 type="password"
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="bg-black border-white text-white"
-                                placeholder="••••••••"
+                                className="bg-zinc-950/50 border-zinc-700 focus-visible:ring-zinc-600"
                             />
                         </div>
 
                         {error && (
-                            <div className="p-3 border-2 border-red-500 bg-red-900/20 text-red-500 text-sm font-bold">
+                            <div className="p-3 rounded-md bg-red-900/20 border border-red-900/50 text-red-500 text-sm font-medium">
                                 {error}
                             </div>
                         )}
 
                         {message && (
-                            <div className="p-3 border-2 border-green-500 bg-green-900/20 text-green-500 text-sm font-bold">
+                            <div className="p-3 rounded-md bg-green-900/20 border border-green-900/50 text-green-500 text-sm font-medium">
                                 {message}
                             </div>
                         )}
@@ -89,16 +93,25 @@ export default function Auth() {
                         <Button
                             type="submit"
                             disabled={loading}
-                            className="w-full bg-white text-black hover:bg-gray-200 border-white h-12 text-lg font-black"
+                            className="w-full bg-white text-black hover:bg-zinc-200 font-bold"
                         >
-                            {loading ? <Loader2 className="animate-spin" /> : (isSignUp ? 'SIGN UP' : 'ENTER')}
+                            {loading ? <Loader2 className="animate-spin h-4 w-4" /> : (isSignUp ? 'Sign Up' : 'Sign In')}
                         </Button>
                     </form>
 
-                    <div className="mt-6 text-center">
+                    <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                            <span className="w-full border-t border-zinc-800" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-zinc-900 px-2 text-zinc-500">Or continue with</span>
+                        </div>
+                    </div>
+
+                    <div className="text-center">
                         <button
                             onClick={() => setIsSignUp(!isSignUp)}
-                            className="text-sm text-gray-400 hover:text-white underline font-medium"
+                            className="text-sm text-zinc-400 hover:text-white underline underline-offset-4"
                         >
                             {isSignUp ? 'Already have an account? Login' : "Don't have an account? Sign Up"}
                         </button>
