@@ -1,39 +1,118 @@
 import React, { useState, useEffect } from 'react';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO } from 'date-fns';
-import { Menu, X, Trash2, Plus, Clock, DollarSign } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
+import { Menu, X, Trash2, Plus, Clock, DollarSign, Loader2, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { supabase } from '@/lib/supabase';
 
 // --- Main App Component ---
 function App() {
-    const [entries, setEntries] = useState(() => {
-        const saved = localStorage.getItem('trackerEvents');
-        return saved ? JSON.parse(saved) : {};
-    });
+    const [entries, setEntries] = useState({});
     const [currentView, setCurrentView] = useState('today'); // 'today', 'weekly', 'monthly'
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
+    // Fetch initial data
     useEffect(() => {
-        localStorage.setItem('trackerEvents', JSON.stringify(entries));
-    }, [entries]);
+        fetchEntries();
+    }, []);
+
+    const fetchEntries = async () => {
+        try {
+            setLoading(true);
+            const { data, error } = await supabase
+                .from('entries')
+                .select('*')
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+
+            // Transform flat SQL data to nested state object: { "YYYY-MM-DD": { time: [], expense: [] } }
+            const nestedData = {};
+            data.forEach(row => {
+                if (!nestedData[row.date]) {
+                    nestedData[row.date] = { time: [], expense: [] };
+                }
+                // Map DB columns to UI shape
+                const entry = {
+                    id: row.id,
+                    task: row.type === 'time' ? row.content : undefined,
+                    duration: row.type === 'time' ? Number(row.value) : undefined,
+                    description: row.type === 'expense' ? row.content : undefined,
+                    amount: row.type === 'expense' ? Number(row.value) : undefined,
+                };
+                nestedData[row.date][row.type].push(entry);
+            });
+
+            setEntries(nestedData);
+        } catch (err) {
+            console.error('Error fetching data:', err);
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const todayStr = format(new Date(), 'yyyy-MM-dd');
 
-    const addEntry = (date, type, data) => {
+    const addEntry = async (date, type, data) => {
+        // Optimistic Update
+        const tempId = Date.now();
+        const optimisticEntry = { id: tempId, ...data };
+
         setEntries(prev => {
             const dateEntries = prev[date] || { time: [], expense: [] };
             return {
                 ...prev,
                 [date]: {
                     ...dateEntries,
-                    [type]: [...(dateEntries[type] || []), { id: Date.now(), ...data }]
+                    [type]: [...(dateEntries[type] || []), optimisticEntry]
                 }
             };
         });
+
+        try {
+            // DB Insert
+            const dbRow = {
+                date: date,
+                type: type,
+                content: type === 'time' ? data.task : data.description,
+                value: type === 'time' ? data.duration : data.amount
+            };
+
+            const { data: inserted, error } = await supabase
+                .from('entries')
+                .insert([dbRow])
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Replace temp ID with real DB ID
+            setEntries(prev => {
+                const dateEntries = prev[date];
+                const updatedList = dateEntries[type].map(e =>
+                    e.id === tempId ? { ...e, id: inserted.id } : e
+                );
+                return {
+                    ...prev,
+                    [date]: { ...dateEntries, [type]: updatedList }
+                };
+            });
+
+        } catch (err) {
+            console.error("Error adding entry:", err);
+            alert("Failed to save entry to cloud. Please try again.");
+            // Revert optimistic update
+            fetchEntries();
+        }
     };
 
-    const deleteEntry = (date, type, id) => {
+    const deleteEntry = async (date, type, id) => {
+        // Optimistic Delete
+        const originalEntries = entries;
         setEntries(prev => {
             const dateEntries = prev[date];
             if (!dateEntries) return prev;
@@ -45,9 +124,42 @@ function App() {
                 }
             };
         });
+
+        try {
+            const { error } = await supabase
+                .from('entries')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+        } catch (err) {
+            console.error("Error deleting entry:", err);
+            alert("Failed to delete from cloud.");
+            setEntries(originalEntries); // Revert
+        }
     };
 
     const renderView = () => {
+        if (loading && Object.keys(entries).length === 0) {
+            return (
+                <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 className="h-10 w-10 animate-spin mb-4" />
+                    <p className="text-xl font-bold">Syncing with database...</p>
+                </div>
+            );
+        }
+
+        if (error) {
+            return (
+                <div className="flex flex-col items-center justify-center py-20 text-red-600">
+                    <Database className="h-10 w-10 mb-4" />
+                    <p className="text-xl font-bold">Connection Error</p>
+                    <p>{error}</p>
+                    <p className="text-sm text-black mt-4">Please check your .env.local keys</p>
+                </div>
+            );
+        }
+
         switch (currentView) {
             case 'today':
                 return <TodayView
@@ -69,7 +181,9 @@ function App() {
         <div className="min-h-screen bg-white text-black p-4 font-sans max-w-5xl mx-auto">
             {/* Header / Navigation */}
             <header className="flex justify-between items-center mb-8 border-b-4 border-black pb-4">
-                <h1 className="text-3xl font-bold tracking-tighter">TRACKER</h1>
+                <h1 className="text-3xl font-bold tracking-tighter flex items-center gap-2">
+                    TRACKER <span className="text-xs bg-black text-white px-1 py-0.5 rounded">CLOUD</span>
+                </h1>
                 <div className="relative">
                     <Button variant="ghost" onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 h-auto border-2 border-black">
                         {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
