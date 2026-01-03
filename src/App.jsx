@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
+import { format, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, addYears, subYears } from 'date-fns';
 import { Menu, X, LogOut, FileDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -19,7 +19,7 @@ function App() {
     const [savedOptions, setSavedOptions] = useState({ time: [], expense: [] });
 
     // UI State
-    const [currentView, setCurrentView] = useState('today'); // 'today', 'weekly', 'monthly', 'calendar'
+    const [currentView, setCurrentView] = useState('today'); // 'today', 'weekly', 'monthly', 'yearly', 'calendar'
     const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showExport, setShowExport] = useState(false);
@@ -96,6 +96,23 @@ function App() {
     const handleSignOut = async () => {
         await supabase.auth.signOut();
         setCurrentView('today');
+    };
+
+    const navigate = (direction) => {
+        const current = new Date(selectedDate);
+        let nextDate = current;
+
+        if (currentView === 'today' || currentView === 'day_detail') {
+            nextDate = direction === 1 ? addDays(current, 1) : subDays(current, 1);
+        } else if (currentView === 'weekly') {
+            nextDate = direction === 1 ? addWeeks(current, 1) : subWeeks(current, 1);
+        } else if (currentView === 'monthly') {
+            nextDate = direction === 1 ? addMonths(current, 1) : subMonths(current, 1);
+        } else if (currentView === 'yearly') {
+            nextDate = direction === 1 ? addYears(current, 1) : subYears(current, 1);
+        }
+
+        setSelectedDate(format(nextDate, 'yyyy-MM-dd'));
     };
 
     // --- CRUD Operations ---
@@ -183,6 +200,7 @@ function App() {
                                     <NavButton label="CALENDAR" active={currentView === 'calendar'} onClick={() => { setCurrentView('calendar'); setIsMenuOpen(false); }} />
                                     <NavButton label="WEEKLY SUMMARY" active={currentView === 'weekly'} onClick={() => { setCurrentView('weekly'); setIsMenuOpen(false); }} />
                                     <NavButton label="MONTHLY SUMMARY" active={currentView === 'monthly'} onClick={() => { setCurrentView('monthly'); setIsMenuOpen(false); }} />
+                                    <NavButton label="YEARLY SUMMARY" active={currentView === 'yearly'} onClick={() => { setCurrentView('yearly'); setIsMenuOpen(false); }} />
 
                                     <button className="px-4 py-3 text-left hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors border-b border-zinc-900 last:border-0 font-medium text-sm flex items-center gap-2"
                                         onClick={() => { setShowExport(true); setIsMenuOpen(false); }}>
@@ -212,11 +230,14 @@ function App() {
                         isToday={currentView === 'today'}
                         savedOptions={savedOptions}
                         onSaveOption={saveNewOption}
+                        onNext={() => navigate(1)}
+                        onPrev={() => navigate(-1)}
                     />
                 ) : null}
 
-                {currentView === 'weekly' && <SummaryView type="week" entries={entries} />}
-                {currentView === 'monthly' && <SummaryView type="month" entries={entries} />}
+                {currentView === 'weekly' && <SummaryView type="week" entries={entries} date={selectedDate} onNext={() => navigate(1)} onPrev={() => navigate(-1)} />}
+                {currentView === 'monthly' && <SummaryView type="month" entries={entries} date={selectedDate} onNext={() => navigate(1)} onPrev={() => navigate(-1)} />}
+                {currentView === 'yearly' && <SummaryView type="year" entries={entries} date={selectedDate} onNext={() => navigate(1)} onPrev={() => navigate(-1)} />}
 
                 {currentView === 'calendar' && (
                     <CalendarView
