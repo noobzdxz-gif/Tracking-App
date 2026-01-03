@@ -119,16 +119,34 @@ export default function DayDetailView({ date, data, onSave, onDelete, isToday, s
         setTimeTask(''); setStartTime(''); setEndTime(''); setSmartTimeInput(''); setEditingTimeId(null); setShowPickers(false);
     };
 
+    const calculateAmount = (expression) => {
+        try {
+            // Remove any non-math characters (allow decimals, +, -, *, /)
+            const clean = expression.replace(/[^0-9\.\+\-\*\/]/g, '');
+            // Simple safe eval using Function
+            return new Function('return ' + clean)();
+        } catch (e) {
+            return parseFloat(expression);
+        }
+    };
+
     const handleExpSubmit = (e) => {
         e.preventDefault();
         if (!expDesc || !expAmount) return;
-        onSave(date, 'expense', { description: expDesc, amount: parseFloat(expAmount) }, editingExpId);
+        const finalAmount = calculateAmount(expAmount);
+
+        if (isNaN(finalAmount) || finalAmount <= 0) {
+            alert("Please enter a valid amount");
+            return;
+        }
+
+        onSave(date, 'expense', { description: expDesc, amount: Number(finalAmount.toFixed(2)) }, editingExpId);
         setExpDesc(''); setExpAmount(''); setEditingExpId(null);
     };
 
     const startEditExp = (item) => {
         setExpDesc(item.description);
-        setExpAmount(item.amount);
+        setExpAmount(item.amount.toString());
         setEditingExpId(item.id);
     };
 
@@ -182,6 +200,8 @@ export default function DayDetailView({ date, data, onSave, onDelete, isToday, s
                     <CardContent className="p-6">
                         <form onSubmit={handleExpSubmit} className={`flex flex-col gap-3 mb-6 p-4 rounded-lg border border-dashed ${editingExpId ? 'border-yellow-600/50 bg-yellow-900/5' : 'border-zinc-800 bg-zinc-900/20'}`}>
                             {editingExpId && <div className="text-xs font-medium text-yellow-500 uppercase">Editing Entry</div>}
+
+                            {/* Row 1: Description */}
                             <div className="flex gap-2 items-center">
                                 <div className="relative flex-grow">
                                     <Input
@@ -205,9 +225,14 @@ export default function DayDetailView({ date, data, onSave, onDelete, isToday, s
                                 <Button type="button" onClick={() => onSaveOption('expense', expDesc)} className="px-2 border-zinc-800 text-zinc-400 hover:text-white" title="Save as default">
                                     <Bookmark size={18} />
                                 </Button>
+                            </div>
+
+                            {/* Row 2: Amount (with Math support) */}
+                            <div className="flex gap-2 items-center">
                                 <Input
-                                    type="number" step="0.01" placeholder="$"
-                                    className="w-24"
+                                    type="text"
+                                    placeholder="$ Amount (e.g. 15.50 + 20)"
+                                    className="flex-grow font-mono"
                                     value={expAmount}
                                     onChange={e => setExpAmount(e.target.value)}
                                 />
