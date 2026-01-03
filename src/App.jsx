@@ -1,27 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, differenceInMinutes, parse } from 'date-fns';
-import { Menu, X, Trash2, Plus, Clock, DollarSign, Loader2, Database } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, differenceInMinutes, parse, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
+import { Menu, X, Trash2, Plus, Clock, DollarSign, Loader2, Database, Calendar as CalendarIcon, LogOut, Edit2, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
+import Auth from '@/components/Auth';
 
 // --- Main App Component ---
 function App() {
+    const [session, setSession] = useState(null);
+    const [loadingSession, setLoadingSession] = useState(true);
+
     const [entries, setEntries] = useState({});
-    const [currentView, setCurrentView] = useState('today');
+    const [currentView, setCurrentView] = useState('today'); // 'today', 'weekly', 'monthly', 'calendar'
+    const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [loading, setLoading] = useState(true);
+    const [loadingData, setLoadingData] = useState(false);
     const [error, setError] = useState(null);
 
-    // Fetch initial data
+    // Auth Session Check
     useEffect(() => {
-        fetchEntries();
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+            setLoadingSession(false);
+        });
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+            if (session) fetchEntries();
+            else setEntries({});
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
+    // Fetch Data
     const fetchEntries = async () => {
         try {
-            setLoading(true);
+            setLoadingData(true);
             const { data, error } = await supabase
                 .from('entries')
                 .select('*')
@@ -38,8 +57,8 @@ function App() {
                     id: row.id,
                     task: row.type === 'time' ? row.content : undefined,
                     duration: row.type === 'time' ? Number(row.value) : undefined,
-                    startTime: row.start_time, // New field
-                    endTime: row.end_time,     // New field
+                    startTime: row.start_time,
+                    endTime: row.end_time,
                     description: row.type === 'expense' ? row.content : undefined,
                     amount: row.type === 'expense' ? Number(row.value) : undefined,
                 };
@@ -51,65 +70,65 @@ function App() {
             console.error('Error fetching data:', err);
             setError(err.message);
         } finally {
-            setLoading(false);
+            setLoadingData(false);
         }
     };
 
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const handleSignOut = async () => {
+        await supabase.auth.signOut();
+        setCurrentView('today');
+    };
 
-    const addEntry = async (date, type, data) => {
-        // Optimistic Update
-        const tempId = Date.now();
-        const optimisticEntry = { id: tempId, ...data };
+    // --- CRUD Operations ---
 
-        setEntries(prev => {
-            const dateEntries = prev[date] || { time: [], expense: [] };
-            return {
-                ...prev,
-                [date]: {
-                    ...dateEntries,
-                    [type]: [...(dateEntries[type] || []), optimisticEntry]
-                }
-            };
-        });
+    const saveEntry = async (date, type, data, editingId = null) => {
+        // Determine Payload
+        const dbRow = {
+            date: date,
+            type: type,
+            content: type === 'time' ? data.task : data.description,
+            value: type === 'time' ? data.duration : data.amount,
+            start_time: type === 'time' ? data.startTime : null,
+            end_time: type === 'time' ? data.endTime : null,
+            // user_id is handled by default auth.uid() in Postgres, 
+            // provided RLS policies are set up correctly.
+        };
 
         try {
-            const dbRow = {
-                date: date,
-                type: type,
-                content: type === 'time' ? data.task : data.description,
-                value: type === 'time' ? data.duration : data.amount,
-                start_time: type === 'time' ? data.startTime : null, // New field
-                end_time: type === 'time' ? data.endTime : null      // New field
-            };
+            let result;
+            if (editingId) {
+                // UDPATE
+                const { data: updated, error } = await supabase
+                    .from('entries')
+                    .update(dbRow)
+                    .eq('id', editingId)
+                    .select()
+                    .single();
+                if (error) throw error;
+                result = updated;
+            } else {
+                // INSERT
+                const { data: inserted, error } = await supabase
+                    .from('entries')
+                    .insert([dbRow])
+                    .select()
+                    .single();
+                if (error) throw error;
+                result = inserted;
+            }
 
-            const { data: inserted, error } = await supabase
-                .from('entries')
-                .insert([dbRow])
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            setEntries(prev => {
-                const dateEntries = prev[date];
-                const updatedList = dateEntries[type].map(e =>
-                    e.id === tempId ? { ...e, id: inserted.id } : e
-                );
-                return {
-                    ...prev,
-                    [date]: { ...dateEntries, [type]: updatedList }
-                };
-            });
+            // Re-fetch to ensure state consistency (simplest way to handle updates correctly)
+            // Optimistic updates for edits are complex with this nested state structure
+            fetchEntries();
 
         } catch (err) {
-            console.error("Error adding entry:", err);
-            alert("Failed to save entry. Check database columns.");
-            fetchEntries();
+            console.error("Error saving entry:", err);
+            alert("Failed to save. " + err.message);
         }
     };
 
     const deleteEntry = async (date, type, id) => {
+        // Optimistic Delete
         const originalEntries = entries;
         setEntries(prev => {
             const dateEntries = prev[date];
@@ -133,71 +152,97 @@ function App() {
         }
     };
 
-    const renderView = () => {
-        if (loading && Object.keys(entries).length === 0) {
-            return (
-                <div className="flex flex-col items-center justify-center py-20 text-white">
-                    <Loader2 className="h-10 w-10 animate-spin mb-4" />
-                    <p className="text-xl font-bold">Syncing...</p>
-                </div>
-            );
-        }
+    // --- Render Views ---
 
+    const renderView = () => {
         if (error) return <div className="text-red-500 text-center py-20">Error: {error}</div>;
 
         switch (currentView) {
             case 'today':
-                return <TodayView
-                    date={todayStr}
-                    data={entries[todayStr] || { time: [], expense: [] }}
-                    onAdd={addEntry}
+            case 'day_detail': // Re-use TodayView for specific dates
+                return <DayDetailView
+                    date={selectedDate}
+                    data={entries[selectedDate] || { time: [], expense: [] }}
+                    onSave={saveEntry}
                     onDelete={deleteEntry}
+                    isToday={currentView === 'today'}
                 />;
             case 'weekly':
                 return <SummaryView type="week" entries={entries} />;
             case 'monthly':
                 return <SummaryView type="month" entries={entries} />;
+            case 'calendar':
+                return <CalendarView
+                    entries={entries}
+                    onSelectDate={(date) => {
+                        setSelectedDate(date);
+                        setCurrentView('day_detail');
+                    }}
+                />;
             default:
-                return <TodayView date={todayStr} data={entries[todayStr]} onAdd={addEntry} onDelete={deleteEntry} />;
+                return null;
         }
     };
+
+    if (loadingSession) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin" /></div>;
+
+    if (!session) return <Auth />;
 
     return (
         <div className="min-h-screen bg-black text-white p-4 font-sans max-w-5xl mx-auto">
             {/* Header */}
             <header className="flex justify-between items-center mb-8 border-b-4 border-white pb-4">
                 <h1 className="text-3xl font-black tracking-tighter flex items-center gap-2">
-                    TRACKER <span className="text-xs bg-white text-black px-1 py-0.5 rounded">DARK</span>
+                    TRACKER <span className="text-xs bg-white text-black px-1 py-0.5 rounded">PRO</span>
                 </h1>
-                <div className="relative">
-                    <Button variant="ghost" onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 h-auto border-2 border-white text-white hover:bg-white hover:text-black">
-                        {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-                    </Button>
+                <div className="flex gap-4 items-center">
+                    <span className="hidden md:inline text-xs font-mono text-gray-400">{session.user.email}</span>
+                    <div className="relative">
+                        <Button variant="ghost" onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 h-auto border-2 border-white text-white hover:bg-white hover:text-black">
+                            {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                        </Button>
 
-                    {isMenuOpen && (
-                        <div className="absolute right-0 top-full mt-2 w-48 bg-black border-2 border-white shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] z-50">
-                            <nav className="flex flex-col">
-                                <button
-                                    className={`px-4 py-3 text-left hover:bg-white hover:text-black transition-colors border-b-2 border-white last:border-0 font-bold ${currentView === 'today' ? 'bg-white text-black' : 'text-white'}`}
-                                    onClick={() => { setCurrentView('today'); setIsMenuOpen(false); }}
-                                >
-                                    TODAY
-                                </button>
-                                <button
-                                    className={`px-4 py-3 text-left hover:bg-white hover:text-black transition-colors border-b-2 border-white last:border-0 font-bold ${currentView === 'weekly' ? 'bg-white text-black' : 'text-white'}`}
-                                    onClick={() => { setCurrentView('weekly'); setIsMenuOpen(false); }}
-                                >
-                                    WEEKLY
-                                </button>
-                                <button
-                                    className={`px-4 py-3 text-left hover:bg-white hover:text-black transition-colors last:border-0 font-bold ${currentView === 'monthly' ? 'bg-white text-black' : 'text-white'}`}
-                                    onClick={() => { setCurrentView('monthly'); setIsMenuOpen(false); }}
-                                >
-                                    MONTHLY
-                                </button>
-                            </nav>
-                        </div>
-                    )}
+                        {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-2 w-56 bg-black border-2 border-white shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] z-50">
+                                <nav className="flex flex-col">
+                                    <button
+                                        className={`px-4 py-3 text-left hover:bg-white hover:text-black transition-colors border-b-2 border-white font-bold ${currentView === 'today' ? 'bg-white text-black' : 'text-white'}`}
+                                        onClick={() => {
+                                            setSelectedDate(format(new Date(), 'yyyy-MM-dd'));
+                                            setCurrentView('today');
+                                            setIsMenuOpen(false);
+                                        }}
+                                    >
+                                        TODAY
+                                    </button>
+                                    <button
+                                        className={`px-4 py-3 text-left hover:bg-white hover:text-black transition-colors border-b-2 border-white font-bold ${currentView === 'calendar' ? 'bg-white text-black' : 'text-white'}`}
+                                        onClick={() => { setCurrentView('calendar'); setIsMenuOpen(false); }}
+                                    >
+                                        CALENDAR
+                                    </button>
+                                    <button
+                                        className={`px-4 py-3 text-left hover:bg-white hover:text-black transition-colors border-b-2 border-white font-bold ${currentView === 'weekly' ? 'bg-white text-black' : 'text-white'}`}
+                                        onClick={() => { setCurrentView('weekly'); setIsMenuOpen(false); }}
+                                    >
+                                        WEEKLY VIEW
+                                    </button>
+                                    <button
+                                        className={`px-4 py-3 text-left hover:bg-white hover:text-black transition-colors border-b-2 border-white font-bold ${currentView === 'monthly' ? 'bg-white text-black' : 'text-white'}`}
+                                        onClick={() => { setCurrentView('monthly'); setIsMenuOpen(false); }}
+                                    >
+                                        MONTHLY VIEW
+                                    </button>
+                                    <button
+                                        className="px-4 py-3 text-left hover:bg-red-600 hover:text-white transition-colors font-bold text-gray-400 flex items-center gap-2"
+                                        onClick={handleSignOut}
+                                    >
+                                        <LogOut size={16} /> LOGOUT
+                                    </button>
+                                </nav>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </header>
             <main>{renderView()}</main>
@@ -207,13 +252,15 @@ function App() {
 
 // --- Sub-components ---
 
-function TodayView({ date, data, onAdd, onDelete }) {
-    // Time Inputs
+function DayDetailView({ date, data, onSave, onDelete, isToday }) {
+    // Time Form State
+    const [editingTimeId, setEditingTimeId] = useState(null);
     const [timeTask, setTimeTask] = useState('');
     const [startTime, setStartTime] = useState('');
     const [endTime, setEndTime] = useState('');
 
-    // Expense Inputs
+    // Expense Form State
+    const [editingExpId, setEditingExpId] = useState(null);
     const [expDesc, setExpDesc] = useState('');
     const [expAmount, setExpAmount] = useState('');
 
@@ -235,55 +282,73 @@ function TodayView({ date, data, onAdd, onDelete }) {
             return;
         }
 
-        onAdd(date, 'time', {
-            task: timeTask,
-            startTime,
-            endTime,
-            duration
-        });
+        onSave(date, 'time', { task: timeTask, startTime, endTime, duration }, editingTimeId);
 
-        setTimeTask('');
-        setStartTime('');
-        setEndTime('');
+        // Reset
+        setTimeTask(''); setStartTime(''); setEndTime(''); setEditingTimeId(null);
+    };
+
+    const startEditTime = (item) => {
+        setTimeTask(item.task);
+        setStartTime(item.startTime || '');
+        setEndTime(item.endTime || '');
+        setEditingTimeId(item.id);
+    };
+
+    const cancelEditTime = () => {
+        setTimeTask(''); setStartTime(''); setEndTime(''); setEditingTimeId(null);
     };
 
     const handleExpSubmit = (e) => {
         e.preventDefault();
         if (!expDesc || !expAmount) return;
-        onAdd(date, 'expense', { description: expDesc, amount: parseFloat(expAmount) });
-        setExpDesc('');
-        setExpAmount('');
+        onSave(date, 'expense', { description: expDesc, amount: parseFloat(expAmount) }, editingExpId);
+        // Reset
+        setExpDesc(''); setExpAmount(''); setEditingExpId(null);
     };
+
+    const startEditExp = (item) => {
+        setExpDesc(item.description);
+        setExpAmount(item.amount);
+        setEditingExpId(item.id);
+    };
+
+    const cancelEditExp = () => {
+        setExpDesc(''); setExpAmount(''); setEditingExpId(null);
+    }
 
     const totalHours = data.time.reduce((acc, curr) => acc + (curr.duration || 0), 0);
     const totalExpense = data.expense.reduce((acc, curr) => acc + (curr.amount || 0), 0);
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-8 animate-in fade-in duration-500">
             <div className="text-center mb-8">
-                <h2 className="text-6xl font-black uppercase tracking-tighter text-white">
+                <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter text-white">
                     {format(parseISO(date), 'EEEE')}
                 </h2>
-                <p className="text-xl font-bold text-gray-400 mt-2">{format(parseISO(date), 'MMMM do, yyyy')}</p>
+                <div className="flex items-center justify-center gap-2 mt-2">
+                    {!isToday && <span className="text-xs font-bold bg-white text-black px-2 py-0.5">ARCHIVE</span>}
+                    <p className="text-xl font-bold text-gray-400">{format(parseISO(date), 'MMMM do, yyyy')}</p>
+                </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-8">
                 {/* Time Tracking */}
                 <Card className="bg-black border-2 border-white shadow-[8px_8px_0px_0px_rgba(255,255,255,1)]">
-                    <CardHeader className="bg-white text-black p-4 border-b-2 border-black">
+                    <CardHeader className="bg-white text-black p-4 border-b-2 border-black flex flex-row items-center justify-between space-y-0">
                         <CardTitle className="flex items-center gap-2 text-xl font-black">
-                            <Clock className="h-6 w-6" /> TIME TRACKING
+                            <Clock className="h-6 w-6" /> TIME
                         </CardTitle>
+                        <div className="text-sm font-black border-2 border-black px-2">
+                            {totalHours.toFixed(2)}h
+                        </div>
                     </CardHeader>
                     <CardContent className="p-6 text-white">
-                        <div className="mb-6 p-4 border-2 border-white bg-gray-900">
-                            <div className="text-sm font-bold text-gray-400 uppercase">Total Hours Today</div>
-                            <div className="text-4xl font-black">{totalHours.toFixed(2)}h</div>
-                        </div>
 
-                        <form onSubmit={handleTimeSubmit} className="flex flex-col gap-2 mb-6">
+                        <form onSubmit={handleTimeSubmit} className={`flex flex-col gap-2 mb-6 p-4 border-2 border-dashed ${editingTimeId ? 'border-yellow-400 bg-yellow-900/10' : 'border-gray-800'}`}>
+                            {editingTimeId && <div className="text-xs font-bold text-yellow-400 uppercase mb-1">Editing Entry</div>}
                             <Input
-                                placeholder="What did you do?"
+                                placeholder="Task description..."
                                 value={timeTask}
                                 onChange={e => setTimeTask(e.target.value)}
                                 className="bg-black border-white text-white placeholder:text-gray-600 focus-visible:ring-white"
@@ -295,22 +360,27 @@ function TodayView({ date, data, onAdd, onDelete }) {
                                     value={startTime}
                                     onChange={e => setStartTime(e.target.value)}
                                 />
-                                <span className="self-center">to</span>
+                                <span className="self-center text-gray-500">-</span>
                                 <Input
                                     type="time"
                                     className="bg-black border-white text-white w-full"
                                     value={endTime}
                                     onChange={e => setEndTime(e.target.value)}
                                 />
-                                <Button type="submit" className="bg-white text-black hover:bg-gray-200 border-white">
-                                    <Plus size={20} />
+                                <Button type="submit" className={`border-white ${editingTimeId ? 'bg-yellow-400 text-black hover:bg-yellow-500' : 'bg-white text-black hover:bg-gray-200'}`}>
+                                    {editingTimeId ? <Check size={20} /> : <Plus size={20} />}
                                 </Button>
+                                {editingTimeId && (
+                                    <Button type="button" onClick={cancelEditTime} variant="ghost" className="text-red-500 hover:text-red-400 hover:bg-transparent px-2">
+                                        <X size={20} />
+                                    </Button>
+                                )}
                             </div>
                         </form>
 
                         <div className="space-y-3">
                             {data.time.map(item => (
-                                <div key={item.id} className="flex justify-between items-center p-3 border-2 border-white bg-black group hover:translate-x-1 transition-transform">
+                                <div key={item.id} className="relative flex justify-between items-center p-3 border-2 border-white bg-black group hover:border-gray-400 transition-colors">
                                     <div>
                                         <div className="font-bold">{item.task}</div>
                                         <div className="text-xs text-gray-400 font-mono mt-1">
@@ -318,71 +388,179 @@ function TodayView({ date, data, onAdd, onDelete }) {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        <span className="font-mono font-bold bg-white text-black px-2 py-1 rounded-sm border border-white">
-                                            {item.duration}h
-                                        </span>
-                                        <button onClick={() => onDelete(date, 'time', item.id)} className="text-white hover:text-red-500 transition-colors">
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <span className="font-mono font-bold text-sm">{item.duration}h</span>
+
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => startEditTime(item)} className="text-white hover:text-yellow-400 p-1">
+                                                <Edit2 size={14} />
+                                            </button>
+                                            <button onClick={() => onDelete(date, 'time', item.id)} className="text-white hover:text-red-500 p-1">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
-                            {data.time.length === 0 && <p className="text-center text-gray-600 italic">No tasks logged.</p>}
+                            {data.time.length === 0 && <p className="text-center text-gray-600 italic text-sm py-4">No tasks logged.</p>}
                         </div>
                     </CardContent>
                 </Card>
 
                 {/* Expense Tracking */}
                 <Card className="bg-black border-2 border-white shadow-[8px_8px_0px_0px_rgba(255,255,255,1)]">
-                    <CardHeader className="bg-white text-black p-4 border-b-2 border-black">
+                    <CardHeader className="bg-white text-black p-4 border-b-2 border-black flex flex-row items-center justify-between space-y-0">
                         <CardTitle className="flex items-center gap-2 text-xl font-black">
-                            <DollarSign className="h-6 w-6" /> EXPENSE TRACKING
+                            <DollarSign className="h-6 w-6" /> EXPENSE
                         </CardTitle>
+                        <div className="text-sm font-black border-2 border-black px-2">
+                            ${totalExpense.toFixed(2)}
+                        </div>
                     </CardHeader>
                     <CardContent className="p-6 text-white">
-                        <div className="mb-6 p-4 border-2 border-white bg-gray-900">
-                            <div className="text-sm font-bold text-gray-400 uppercase">Total Spent Today</div>
-                            <div className="text-4xl font-black">${totalExpense.toFixed(2)}</div>
-                        </div>
 
-                        <form onSubmit={handleExpSubmit} className="flex gap-2 mb-6">
-                            <Input
-                                placeholder="Description"
-                                value={expDesc}
-                                onChange={e => setExpDesc(e.target.value)}
-                                className="flex-grow bg-black border-white text-white placeholder:text-gray-600"
-                            />
-                            <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="$"
-                                className="w-24 bg-black border-white text-white"
-                                value={expAmount}
-                                onChange={e => setExpAmount(e.target.value)}
-                            />
-                            <Button type="submit" className="bg-white text-black hover:bg-gray-200 border-white">
-                                <Plus size={20} />
-                            </Button>
+                        <form onSubmit={handleExpSubmit} className={`flex gap-2 mb-6 p-4 border-2 border-dashed ${editingExpId ? 'border-yellow-400 bg-yellow-900/10' : 'border-gray-800'}`}>
+                            <div className="flex-grow space-y-2">
+                                {editingExpId && <div className="text-xs font-bold text-yellow-400 uppercase">Editing Entry</div>}
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder="Description"
+                                        value={expDesc}
+                                        onChange={e => setExpDesc(e.target.value)}
+                                        className="flex-grow bg-black border-white text-white placeholder:text-gray-600"
+                                    />
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="$"
+                                        className="w-24 bg-black border-white text-white"
+                                        value={expAmount}
+                                        onChange={e => setExpAmount(e.target.value)}
+                                    />
+                                    <Button type="submit" className={`border-white ${editingExpId ? 'bg-yellow-400 text-black hover:bg-yellow-500' : 'bg-white text-black hover:bg-gray-200'}`}>
+                                        {editingExpId ? <Check size={20} /> : <Plus size={20} />}
+                                    </Button>
+                                    {editingExpId && (
+                                        <Button type="button" onClick={cancelEditExp} variant="ghost" className="text-red-500 hover:text-red-400 hover:bg-transparent px-2">
+                                            <X size={20} />
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
                         </form>
 
                         <div className="space-y-3">
                             {data.expense.map(item => (
-                                <div key={item.id} className="flex justify-between items-center p-3 border-2 border-white bg-black group hover:translate-x-1 transition-transform">
+                                <div key={item.id} className="flex justify-between items-center p-3 border-2 border-white bg-black group hover:border-gray-400 transition-colors">
                                     <div className="font-bold">{item.description}</div>
                                     <div className="flex items-center gap-3">
-                                        <span className="font-mono font-bold bg-gray-800 px-2 py-1 rounded-sm border border-white text-white">
+                                        <span className="font-mono font-bold text-sm text-green-400">
                                             ${item.amount}
                                         </span>
-                                        <button onClick={() => onDelete(date, 'expense', item.id)} className="text-white hover:text-red-500 transition-colors">
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => startEditExp(item)} className="text-white hover:text-yellow-400 p-1">
+                                                <Edit2 size={14} />
+                                            </button>
+                                            <button onClick={() => onDelete(date, 'expense', item.id)} className="text-white hover:text-red-500 p-1">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
-                            {data.expense.length === 0 && <p className="text-center text-gray-600 italic">No expenses logged.</p>}
+                            {data.expense.length === 0 && <p className="text-center text-gray-600 italic text-sm py-4">No expenses logged.</p>}
                         </div>
                     </CardContent>
                 </Card>
+            </div>
+        </div>
+    );
+}
+
+function CalendarView({ entries, onSelectDate }) {
+    const [currentMonth, setCurrentMonth] = useState(new Date());
+
+    const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
+    const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(monthStart);
+    const startDate = startOfWeek(monthStart);
+    const endDate = endOfWeek(monthEnd);
+
+    const dateFormat = "d";
+    const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+    const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    return (
+        <div className="animate-in fade-in zoom-in duration-300">
+            <div className="flex justify-between items-center mb-8">
+                <Button variant="ghost" onClick={prevMonth} className="text-white hover:bg-white hover:text-black border-2 border-transparent hover:border-white">
+                    <ChevronLeft size={32} />
+                </Button>
+                <div className="text-center">
+                    <h2 className="text-4xl font-black uppercase tracking-tighter">{format(currentMonth, "MMMM yyyy")}</h2>
+                </div>
+                <Button variant="ghost" onClick={nextMonth} className="text-white hover:bg-white hover:text-black border-2 border-transparent hover:border-white">
+                    <ChevronRight size={32} />
+                </Button>
+            </div>
+
+            <div className="grid grid-cols-7 mb-4">
+                {weekDays.map(day => (
+                    <div key={day} className="text-center font-bold text-gray-500 uppercase text-sm border-b-2 border-gray-800 pb-2">
+                        {day}
+                    </div>
+                ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 md:gap-2">
+                {days.map(day => {
+                    const dStr = format(day, 'yyyy-MM-dd');
+                    const dayData = entries[dStr];
+                    const hasData = dayData && (dayData.time.length > 0 || dayData.expense.length > 0);
+                    const isSelectedMonth = isSameMonth(day, monthStart);
+
+                    return (
+                        <div
+                            key={day}
+                            onClick={() => onSelectDate(dStr)}
+                            className={`
+                                min-h-[80px] md:min-h-[120px] p-2 border-2 cursor-pointer transition-all hover:translate-y-[-2px] hover:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.5)]
+                                ${isSelectedMonth ? 'bg-black border-white' : 'bg-gray-900 border-gray-700 opacity-50'}
+                                ${isSameDay(day, new Date()) ? 'ring-2 ring-white ring-offset-2 ring-offset-black' : ''}
+                            `}
+                        >
+                            <div className="flex justify-between items-start">
+                                <span className={`font-bold ${!isSelectedMonth ? 'text-gray-600' : 'text-white'}`}>
+                                    {format(day, dateFormat)}
+                                </span>
+                                {hasData && <div className="h-2 w-2 bg-white rounded-full"></div>}
+                            </div>
+
+                            {hasData && isSelectedMonth && (
+                                <div className="mt-2 space-y-1 text-xs hidden md:block">
+                                    {dayData.time.length > 0 && (
+                                        <div className="flex items-center gap-1 text-gray-300">
+                                            <Clock size={10} />
+                                            <span>
+                                                {dayData.time.reduce((acc, t) => acc + t.duration, 0).toFixed(1)}h
+                                            </span>
+                                        </div>
+                                    )}
+                                    {dayData.expense.length > 0 && (
+                                        <div className="flex items-center gap-1 text-green-400">
+                                            <DollarSign size={10} />
+                                            <span>
+                                                ${dayData.expense.reduce((acc, e) => acc + e.amount, 0).toFixed(0)}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -419,7 +597,7 @@ function SummaryView({ type, entries }) {
     });
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="text-center mb-8">
                 <h2 className="text-4xl font-black uppercase tracking-tighter text-white">
                     {type === 'week' ? 'Weekly Summary' : 'Monthly Summary'}
