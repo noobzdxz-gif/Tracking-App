@@ -1,15 +1,34 @@
 import React from 'react';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
-import { Clock, DollarSign } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, eachDayOfInterval } from 'date-fns';
+import { Clock, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
-export default function SummaryView({ type, entries }) {
-    const now = new Date();
-    const start = type === 'week' ? startOfWeek(now, { weekStartsOn: 1 }) : startOfMonth(now);
-    const end = type === 'week' ? endOfWeek(now, { weekStartsOn: 1 }) : endOfMonth(now);
+export default function SummaryView({ type, entries, date, onNext, onPrev }) {
+    // Determine range based on type
+    const current = date ? new Date(date) : new Date();
+    let start, end;
+    let title = '';
+
+    if (type === 'week') {
+        start = startOfWeek(current, { weekStartsOn: 1 });
+        end = endOfWeek(current, { weekStartsOn: 1 });
+        title = 'Weekly Summary';
+    } else if (type === 'month') {
+        start = startOfMonth(current);
+        end = endOfMonth(current);
+        title = 'Monthly Summary';
+    } else {
+        // Year
+        start = startOfYear(current);
+        end = endOfYear(current);
+        title = 'Yearly Summary';
+    }
+
     const days = eachDayOfInterval({ start, end });
     let totalTime = 0;
     let totalMoney = 0;
+    const taskSummary = {};
     const expenseSummary = {};
 
     days.forEach(day => {
@@ -26,9 +45,19 @@ export default function SummaryView({ type, entries }) {
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="text-center mb-8">
-                <h2 className="text-3xl font-semibold tracking-tight text-white">{type === 'week' ? 'Weekly Summary' : 'Monthly Summary'}</h2>
-                <p className="text-lg text-zinc-500 mt-2">{format(start, 'MMM d')} - {format(end, 'MMM d, yyyy')}</p>
+            <div className="flex items-center justify-between mb-8">
+                <Button variant="ghost" onClick={onPrev} className="h-12 w-12 p-0 rounded-full border border-zinc-900 bg-zinc-950 text-zinc-400 hover:text-white hover:bg-zinc-900">
+                    <ChevronLeft size={24} />
+                </Button>
+
+                <div className="text-center">
+                    <h2 className="text-3xl font-semibold tracking-tight text-white">{title}</h2>
+                    <p className="text-lg text-zinc-500 mt-2">{format(start, 'MMM d, yyyy')} - {format(end, 'MMM d, yyyy')}</p>
+                </div>
+
+                <Button variant="ghost" onClick={onNext} className="h-12 w-12 p-0 rounded-full border border-zinc-900 bg-zinc-950 text-zinc-400 hover:text-white hover:bg-zinc-900">
+                    <ChevronRight size={24} />
+                </Button>
             </div>
 
             <div className="flex flex-col gap-6">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { format, parse, differenceInMinutes, parseISO, isValid } from 'date-fns';
-import { Clock, DollarSign, Plus, Check, X, Edit2, Trash2, Bookmark } from 'lucide-react';
+import { Clock, DollarSign, Plus, Check, X, Edit2, Trash2, Bookmark, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -57,7 +57,7 @@ const SuggestionList = ({ options, value, onSelect, visible }) => {
     );
 };
 
-export default function DayDetailView({ date, data, onSave, onDelete, isToday, savedOptions, onSaveOption }) {
+export default function DayDetailView({ date, data, onSave, onDelete, isToday, savedOptions, onSaveOption, onNext, onPrev }) {
     // UI State
     const [activeField, setActiveField] = useState(null); // 'timeTask', 'expDesc'
 
@@ -148,14 +148,24 @@ export default function DayDetailView({ date, data, onSave, onDelete, isToday, s
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
-            <div className="text-center mb-8">
-                <h2 className="text-4xl md:text-5xl font-semibold tracking-tight text-white">
-                    {format(parseISO(date), 'EEEE')}
-                </h2>
-                <div className="flex items-center justify-center gap-2 mt-2">
-                    {!isToday && <span className="text-xs font-medium bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full">Archive</span>}
-                    <p className="text-xl text-zinc-500">{format(parseISO(date), 'MMMM do, yyyy')}</p>
+            <div className="flex items-center justify-between mb-8">
+                <Button variant="ghost" onClick={onPrev} className="h-12 w-12 p-0 rounded-full border border-zinc-900 bg-zinc-950 text-zinc-400 hover:text-white hover:bg-zinc-900">
+                    <ChevronLeft size={24} />
+                </Button>
+
+                <div className="text-center">
+                    <h2 className="text-2xl md:text-5xl font-semibold tracking-tight text-white">
+                        {format(parseISO(date), 'EEEE')}
+                    </h2>
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                        {!isToday && <span className="text-xs font-medium bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full">Archive</span>}
+                        <p className="text-lg md:text-xl text-zinc-500">{format(parseISO(date), 'MMMM do, yyyy')}</p>
+                    </div>
                 </div>
+
+                <Button variant="ghost" onClick={onNext} className="h-12 w-12 p-0 rounded-full border border-zinc-900 bg-zinc-950 text-zinc-400 hover:text-white hover:bg-zinc-900">
+                    <ChevronRight size={24} />
+                </Button>
             </div>
 
             <div className="flex flex-col gap-6">
