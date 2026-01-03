@@ -10,14 +10,17 @@ export default function SummaryView({ type, entries }) {
     const days = eachDayOfInterval({ start, end });
     let totalTime = 0;
     let totalMoney = 0;
-    const taskSummary = {};
+    const expenseSummary = {};
 
     days.forEach(day => {
         const dStr = format(day, 'yyyy-MM-dd');
         const dayData = entries[dStr];
         if (dayData) {
             if (dayData.time) dayData.time.forEach(t => { totalTime += (t.duration || 0); taskSummary[t.task] = (taskSummary[t.task] || 0) + t.duration; });
-            if (dayData.expense) dayData.expense.forEach(e => { totalMoney += (e.amount || 0); });
+            if (dayData.expense) dayData.expense.forEach(e => {
+                totalMoney += (e.amount || 0);
+                expenseSummary[e.description] = (expenseSummary[e.description] || 0) + e.amount;
+            });
         }
     });
 
@@ -33,9 +36,21 @@ export default function SummaryView({ type, entries }) {
                 <Card className="order-1">
                     <CardHeader className="bg-zinc-900/50 border-b border-zinc-800 p-4 text-white rounded-t-lg"><CardTitle className="text-lg flex items-center gap-2 font-medium"><DollarSign className="h-5 w-5 text-zinc-400" /> Total Spent: ${totalMoney.toFixed(2)}</CardTitle></CardHeader>
                     <CardContent className="p-6 text-white">
-                        <div className="p-8 text-center border border-zinc-800 border-dashed bg-zinc-900/30 rounded-lg">
+                        <div className="p-8 text-center border border-zinc-800 border-dashed bg-zinc-900/30 rounded-lg mb-6">
                             <div className="text-sm font-medium text-zinc-500 uppercase mb-2">Total Expenses</div>
                             <div className="text-5xl font-bold tracking-tight">${totalMoney.toFixed(2)}</div>
+                        </div>
+
+                        <h3 className="font-semibold border-b border-zinc-800 pb-2 mb-4 text-zinc-200">Expense Breakdown</h3>
+                        <div className="space-y-2">
+                            {Object.entries(expenseSummary).length > 0 ? (
+                                Object.entries(expenseSummary).sort(([, a], [, b]) => b - a).map(([desc, amount]) => (
+                                    <div key={desc} className="flex justify-between items-center border-b border-zinc-900 py-2 last:border-0">
+                                        <span className="font-medium text-zinc-300">{desc}</span>
+                                        <span className="font-mono font-medium text-zinc-500">${amount.toFixed(2)}</span>
+                                    </div>
+                                ))
+                            ) : <p className="text-zinc-600 italic">No expenses recorded.</p>}
                         </div>
                     </CardContent>
                 </Card>
