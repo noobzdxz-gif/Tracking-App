@@ -1,11 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, differenceInMinutes, parse, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
-import { Menu, X, Trash2, Plus, Clock, DollarSign, Loader2, Database, Calendar as CalendarIcon, LogOut, Edit2, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, differenceInMinutes, parse, isSameMonth, isSameDay, addMonths, subMonths, isValid } from 'date-fns';
+import { Menu, X, Trash2, Plus, Clock, DollarSign, Loader2, Database, Calendar as CalendarIcon, LogOut, Edit2, Check, ChevronLeft, ChevronRight, Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
 import Auth from '@/components/Auth';
+
+// --- Helper: Smart Time Parser ---
+const parseSmartTime = (input) => {
+    if (!input) return null;
+
+    // Normalize: remove extra spaces, lowercase
+    const clean = input.toLowerCase().replace(/\s+/g, ' ').trim();
+
+    // Regex for splitting strings like "6am to 5pm", "06:00 - 17:00"
+    // Supports separators: "to", "-", "until", space
+    const parts = clean.split(/\s+(?:to|-|until)\s+/);
+
+    if (parts.length !== 2) return null;
+
+    const parsePart = (str) => {
+        // Try parsing various formats
+        const formats = ['HH:mm', 'H:mm', 'h:mm a', 'h:mma', 'ha', 'h a'];
+        const referenceDate = new Date(); // Use today for parsing time
+
+        for (let fmt of formats) {
+            const d = parse(str, fmt, referenceDate);
+            if (isValid(d)) {
+                return format(d, 'HH:mm');
+            }
+        }
+        return null;
+    };
+
+    const start = parsePart(parts[0]);
+    const end = parsePart(parts[1]);
+
+    if (start && end) {
+        return { start, end };
+    }
+    return null;
+};
 
 // --- Main App Component ---
 function App() {
@@ -82,7 +118,6 @@ function App() {
     // --- CRUD Operations ---
 
     const saveEntry = async (date, type, data, editingId = null) => {
-        // Determine Payload
         const dbRow = {
             date: date,
             type: type,
@@ -90,35 +125,22 @@ function App() {
             value: type === 'time' ? data.duration : data.amount,
             start_time: type === 'time' ? data.startTime : null,
             end_time: type === 'time' ? data.endTime : null,
-            // user_id is handled by default auth.uid() in Postgres, 
-            // provided RLS policies are set up correctly.
         };
 
         try {
-            let result;
             if (editingId) {
-                // UDPATE
-                const { data: updated, error } = await supabase
+                const { error } = await supabase
                     .from('entries')
                     .update(dbRow)
-                    .eq('id', editingId)
-                    .select()
-                    .single();
+                    .eq('id', editingId);
                 if (error) throw error;
-                result = updated;
             } else {
-                // INSERT
-                const { data: inserted, error } = await supabase
+                const { error } = await supabase
                     .from('entries')
-                    .insert([dbRow])
-                    .select()
-                    .single();
+                    .insert([dbRow]);
                 if (error) throw error;
-                result = inserted;
             }
 
-            // Re-fetch to ensure state consistency (simplest way to handle updates correctly)
-            // Optimistic updates for edits are complex with this nested state structure
             fetchEntries();
 
         } catch (err) {
@@ -159,7 +181,7 @@ function App() {
 
         switch (currentView) {
             case 'today':
-            case 'day_detail': // Re-use TodayView for specific dates
+            case 'day_detail':
                 return <DayDetailView
                     date={selectedDate}
                     data={entries[selectedDate] || { time: [], expense: [] }}
@@ -198,7 +220,7 @@ function App() {
                 <div className="flex gap-4 items-center">
                     <span className="hidden md:inline text-xs font-mono text-gray-400">{session.user.email}</span>
                     <div className="relative">
-                        <Button variant="ghost" onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 h-auto border-2 border-white text-white hover:bg-white hover:text-black">
+                        <Button variant="ghost" onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 h-auto">
                             {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
                         </Button>
 
@@ -256,6 +278,10 @@ function DayDetailView({ date, data, onSave, onDelete, isToday }) {
     // Time Form State
     const [editingTimeId, setEditingTimeId] = useState(null);
     const [timeTask, setTimeTask] = useState('');
+
+    // Smart Time Inputs
+    const [smartTimeInput, setSmartTimeInput] = useState('');
+    const [showPickers, setShowPickers] = useState(false);
     const [startTime, setStartTime] = useState('');
     const [endTime, setEndTime] = useState('');
 
@@ -263,6 +289,24 @@ function DayDetailView({ date, data, onSave, onDelete, isToday }) {
     const [editingExpId, setEditingExpId] = useState(null);
     const [expDesc, setExpDesc] = useState('');
     const [expAmount, setExpAmount] = useState('');
+
+    // Sync manual pickers with smart input
+    useEffect(() => {
+        if (startTime && endTime) {
+            setSmartTimeInput(`${startTime} - ${endTime}`);
+        } else if (!startTime && !endTime) {
+            // Only clear if both are empty to avoid aggressive clearing
+            // setSmartTimeInput('');
+        }
+    }, [startTime, endTime]);
+
+    const handleSmartInputBlur = () => {
+        const parsed = parseSmartTime(smartTimeInput);
+        if (parsed) {
+            setStartTime(parsed.start);
+            setEndTime(parsed.end);
+        }
+    };
 
     const calculateDuration = (start, end) => {
         if (!start || !end) return 0;
@@ -285,18 +329,24 @@ function DayDetailView({ date, data, onSave, onDelete, isToday }) {
         onSave(date, 'time', { task: timeTask, startTime, endTime, duration }, editingTimeId);
 
         // Reset
-        setTimeTask(''); setStartTime(''); setEndTime(''); setEditingTimeId(null);
+        setTimeTask('');
+        setStartTime('');
+        setEndTime('');
+        setSmartTimeInput('');
+        setEditingTimeId(null);
+        setShowPickers(false);
     };
 
     const startEditTime = (item) => {
         setTimeTask(item.task);
         setStartTime(item.startTime || '');
         setEndTime(item.endTime || '');
+        setSmartTimeInput(`${item.startTime} - ${item.endTime}`);
         setEditingTimeId(item.id);
     };
 
     const cancelEditTime = () => {
-        setTimeTask(''); setStartTime(''); setEndTime(''); setEditingTimeId(null);
+        setTimeTask(''); setStartTime(''); setEndTime(''); setSmartTimeInput(''); setEditingTimeId(null); setShowPickers(false);
     };
 
     const handleExpSubmit = (e) => {
@@ -353,28 +403,50 @@ function DayDetailView({ date, data, onSave, onDelete, isToday }) {
                                 onChange={e => setTimeTask(e.target.value)}
                                 className="bg-black border-white text-white placeholder:text-gray-600 focus-visible:ring-white"
                             />
-                            <div className="flex gap-2">
-                                <Input
-                                    type="time"
-                                    className="bg-black border-white text-white w-full"
-                                    value={startTime}
-                                    onChange={e => setStartTime(e.target.value)}
-                                />
-                                <span className="self-center text-gray-500">-</span>
-                                <Input
-                                    type="time"
-                                    className="bg-black border-white text-white w-full"
-                                    value={endTime}
-                                    onChange={e => setEndTime(e.target.value)}
-                                />
-                                <Button type="submit" className={`border-white ${editingTimeId ? 'bg-yellow-400 text-black hover:bg-yellow-500' : 'bg-white text-black hover:bg-gray-200'}`}>
-                                    {editingTimeId ? <Check size={20} /> : <Plus size={20} />}
+
+                            <div className="flex gap-2 items-center">
+                                <div className="flex-grow">
+                                    <Input
+                                        placeholder="e.g. 6am to 2pm"
+                                        value={smartTimeInput}
+                                        onChange={e => setSmartTimeInput(e.target.value)}
+                                        onBlur={handleSmartInputBlur}
+                                        className="bg-black border-white text-white placeholder:text-gray-600 focus-visible:ring-white"
+                                    />
+                                </div>
+                                <Button type="button" onClick={() => setShowPickers(!showPickers)} className="px-3" title="Toggle Manual Time Picker">
+                                    <Clock size={20} />
                                 </Button>
+                            </div>
+
+                            {/* Collapsible Manual Pickers */}
+                            {showPickers && (
+                                <div className="flex gap-2 animate-in slide-in-from-top-2 duration-200">
+                                    <Input
+                                        type="time"
+                                        className="bg-black border-white text-white w-full"
+                                        value={startTime}
+                                        onChange={e => setStartTime(e.target.value)}
+                                    />
+                                    <span className="self-center text-gray-500">-</span>
+                                    <Input
+                                        type="time"
+                                        className="bg-black border-white text-white w-full"
+                                        value={endTime}
+                                        onChange={e => setEndTime(e.target.value)}
+                                    />
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-2 mt-2">
                                 {editingTimeId && (
-                                    <Button type="button" onClick={cancelEditTime} variant="ghost" className="text-red-500 hover:text-red-400 hover:bg-transparent px-2">
-                                        <X size={20} />
+                                    <Button type="button" onClick={cancelEditTime} variant="ghost" className="text-red-500 border-red-500 hover:bg-red-900/20">
+                                        <X size={20} /> CANCEL
                                     </Button>
                                 )}
+                                <Button type="submit" className={`flex-grow ${editingTimeId ? 'bg-yellow-400 text-black border-yellow-400 hover:bg-yellow-500' : 'bg-white text-black hover:bg-gray-200'}`}>
+                                    {editingTimeId ? <><Check size={20} className="mr-2" /> UPDATE</> : <><Plus size={20} className="mr-2" /> ADD ENTRY</>}
+                                </Button>
                             </div>
                         </form>
 
@@ -390,12 +462,12 @@ function DayDetailView({ date, data, onSave, onDelete, isToday }) {
                                     <div className="flex items-center gap-3">
                                         <span className="font-mono font-bold text-sm">{item.duration}h</span>
 
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => startEditTime(item)} className="text-white hover:text-yellow-400 p-1">
-                                                <Edit2 size={14} />
+                                        <div className="flex gap-2">
+                                            <button onClick={() => startEditTime(item)} className="text-white hover:text-yellow-400">
+                                                <Edit2 size={16} />
                                             </button>
-                                            <button onClick={() => onDelete(date, 'time', item.id)} className="text-white hover:text-red-500 p-1">
-                                                <Trash2 size={14} />
+                                            <button onClick={() => onDelete(date, 'time', item.id)} className="text-white hover:text-red-500">
+                                                <Trash2 size={16} />
                                             </button>
                                         </div>
                                     </div>
@@ -418,33 +490,33 @@ function DayDetailView({ date, data, onSave, onDelete, isToday }) {
                     </CardHeader>
                     <CardContent className="p-6 text-white">
 
-                        <form onSubmit={handleExpSubmit} className={`flex gap-2 mb-6 p-4 border-2 border-dashed ${editingExpId ? 'border-yellow-400 bg-yellow-900/10' : 'border-gray-800'}`}>
-                            <div className="flex-grow space-y-2">
-                                {editingExpId && <div className="text-xs font-bold text-yellow-400 uppercase">Editing Entry</div>}
-                                <div className="flex gap-2">
-                                    <Input
-                                        placeholder="Description"
-                                        value={expDesc}
-                                        onChange={e => setExpDesc(e.target.value)}
-                                        className="flex-grow bg-black border-white text-white placeholder:text-gray-600"
-                                    />
-                                    <Input
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="$"
-                                        className="w-24 bg-black border-white text-white"
-                                        value={expAmount}
-                                        onChange={e => setExpAmount(e.target.value)}
-                                    />
-                                    <Button type="submit" className={`border-white ${editingExpId ? 'bg-yellow-400 text-black hover:bg-yellow-500' : 'bg-white text-black hover:bg-gray-200'}`}>
-                                        {editingExpId ? <Check size={20} /> : <Plus size={20} />}
+                        <form onSubmit={handleExpSubmit} className={`flex flex-col gap-2 mb-6 p-4 border-2 border-dashed ${editingExpId ? 'border-yellow-400 bg-yellow-900/10' : 'border-gray-800'}`}>
+                            {editingExpId && <div className="text-xs font-bold text-yellow-400 uppercase">Editing Entry</div>}
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="Description"
+                                    value={expDesc}
+                                    onChange={e => setExpDesc(e.target.value)}
+                                    className="flex-grow bg-black border-white text-white placeholder:text-gray-600"
+                                />
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="$"
+                                    className="w-24 bg-black border-white text-white"
+                                    value={expAmount}
+                                    onChange={e => setExpAmount(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex justify-end gap-2 mt-2">
+                                {editingExpId && (
+                                    <Button type="button" onClick={cancelEditExp} variant="ghost" className="text-red-500 border-red-500 hover:bg-red-900/20">
+                                        <X size={20} /> CANCEL
                                     </Button>
-                                    {editingExpId && (
-                                        <Button type="button" onClick={cancelEditExp} variant="ghost" className="text-red-500 hover:text-red-400 hover:bg-transparent px-2">
-                                            <X size={20} />
-                                        </Button>
-                                    )}
-                                </div>
+                                )}
+                                <Button type="submit" className={`flex-grow ${editingExpId ? 'bg-yellow-400 text-black border-yellow-400 hover:bg-yellow-500' : 'bg-white text-black hover:bg-gray-200'}`}>
+                                    {editingExpId ? <><Check size={20} className="mr-2" /> UPDATE</> : <><Plus size={20} className="mr-2" /> ADD ENTRY</>}
+                                </Button>
                             </div>
                         </form>
 
@@ -456,12 +528,12 @@ function DayDetailView({ date, data, onSave, onDelete, isToday }) {
                                         <span className="font-mono font-bold text-sm text-green-400">
                                             ${item.amount}
                                         </span>
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => startEditExp(item)} className="text-white hover:text-yellow-400 p-1">
-                                                <Edit2 size={14} />
+                                        <div className="flex gap-2">
+                                            <button onClick={() => startEditExp(item)} className="text-white hover:text-yellow-400">
+                                                <Edit2 size={16} />
                                             </button>
-                                            <button onClick={() => onDelete(date, 'expense', item.id)} className="text-white hover:text-red-500 p-1">
-                                                <Trash2 size={14} />
+                                            <button onClick={() => onDelete(date, 'expense', item.id)} className="text-white hover:text-red-500">
+                                                <Trash2 size={16} />
                                             </button>
                                         </div>
                                     </div>
@@ -495,13 +567,13 @@ function CalendarView({ entries, onSelectDate }) {
     return (
         <div className="animate-in fade-in zoom-in duration-300">
             <div className="flex justify-between items-center mb-8">
-                <Button variant="ghost" onClick={prevMonth} className="text-white hover:bg-white hover:text-black border-2 border-transparent hover:border-white">
+                <Button variant="ghost" onClick={prevMonth} className="px-3">
                     <ChevronLeft size={32} />
                 </Button>
                 <div className="text-center">
                     <h2 className="text-4xl font-black uppercase tracking-tighter">{format(currentMonth, "MMMM yyyy")}</h2>
                 </div>
-                <Button variant="ghost" onClick={nextMonth} className="text-white hover:bg-white hover:text-black border-2 border-transparent hover:border-white">
+                <Button variant="ghost" onClick={nextMonth} className="px-3">
                     <ChevronRight size={32} />
                 </Button>
             </div>
