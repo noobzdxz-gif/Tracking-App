@@ -7,7 +7,7 @@ const Button = React.forwardRef(({ className, variant = "default", size = "defau
             ref={ref}
             className={cn(
                 "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                "border-2 border-black bg-white text-black hover:bg-gray-100", // Default style enforcement
+                "border-2 border-primary bg-primary text-primary-foreground hover:bg-secondary", // Updated for generic theme usage
                 className
             )}
             {...props}
