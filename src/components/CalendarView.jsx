@@ -1,12 +1,23 @@
 import React, { useState } from 'react';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
-import { ChevronLeft, ChevronRight, Clock, DollarSign } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth, isSameDay, setMonth, setYear } from 'date-fns';
+import { ChevronLeft, ChevronRight, Clock, DollarSign, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function CalendarView({ entries, onSelectDate }) {
     const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [showJump, setShowJump] = useState(false);
+    const [jumpYear, setJumpYear] = useState(new Date().getFullYear());
+
     const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
     const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+
+    const handleJump = (monthIndex) => {
+        const newDate = setMonth(setYear(currentMonth, jumpYear), monthIndex);
+        setCurrentMonth(newDate);
+        setShowJump(false);
+    };
+
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(monthStart);
     const startDate = startOfWeek(monthStart);
@@ -15,10 +26,46 @@ export default function CalendarView({ entries, onSelectDate }) {
 
     return (
         <div className="animate-in fade-in zoom-in duration-300">
-            <div className="flex justify-between items-center mb-8">
-                <Button variant="ghost" onClick={prevMonth} className="px-3 text-zinc-400 hover:text-white border-transparent hover:bg-zinc-900"><ChevronLeft size={24} /></Button>
-                <div className="text-center"><h2 className="text-3xl font-semibold tracking-tight text-white">{format(currentMonth, "MMMM yyyy")}</h2></div>
-                <Button variant="ghost" onClick={nextMonth} className="px-3 text-zinc-400 hover:text-white border-transparent hover:bg-zinc-900"><ChevronRight size={24} /></Button>
+            <div className="flex justify-between items-center mb-8 h-10">
+                {!showJump ? (
+                    <>
+                        <Button variant="ghost" onClick={prevMonth} className="px-3 text-zinc-400 hover:text-white border-transparent hover:bg-zinc-900"><ChevronLeft size={24} /></Button>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-3xl font-semibold tracking-tight text-white">{format(currentMonth, "MMMM yyyy")}</h2>
+                            <Button variant="ghost" size="icon" onClick={() => { setJumpYear(currentMonth.getFullYear()); setShowJump(true); }} className="text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-full h-8 w-8">
+                                <Search size={16} />
+                            </Button>
+                        </div>
+                        <Button variant="ghost" onClick={nextMonth} className="px-3 text-zinc-400 hover:text-white border-transparent hover:bg-zinc-900"><ChevronRight size={24} /></Button>
+                    </>
+                ) : (
+                    <div className="flex items-center gap-2 w-full justify-center animate-in fade-in slide-in-from-top-2 duration-200">
+                        <select
+                            className="h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600"
+                            value={currentMonth.getMonth()}
+                            onChange={(e) => handleJump(parseInt(e.target.value))}
+                        >
+                            {Array.from({ length: 12 }).map((_, i) => (
+                                <option key={i} value={i}>{format(new Date(2000, i, 1), 'MMMM')}</option>
+                            ))}
+                        </select>
+                        <Input
+                            type="number"
+                            className="w-24"
+                            value={jumpYear}
+                            onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                setJumpYear(val);
+                                if (val > 1900 && val < 2100) {
+                                    setCurrentMonth(setYear(currentMonth, val));
+                                }
+                            }}
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => setShowJump(false)} className="text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-full">
+                            <X size={18} />
+                        </Button>
+                    </div>
+                )}
             </div>
             <div className="grid grid-cols-7 mb-4">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
