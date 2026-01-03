@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth, isSameDay, setMonth, setYear } from 'date-fns';
-import { ChevronLeft, ChevronRight, Clock, DollarSign, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, DollarSign, CalendarDays, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -32,8 +32,8 @@ export default function CalendarView({ entries, onSelectDate }) {
                         <Button variant="ghost" onClick={prevMonth} className="px-3 text-zinc-400 hover:text-white border-transparent hover:bg-zinc-900"><ChevronLeft size={24} /></Button>
                         <div className="flex items-center gap-2">
                             <h2 className="text-3xl font-semibold tracking-tight text-white">{format(currentMonth, "MMMM yyyy")}</h2>
-                            <Button variant="ghost" size="icon" onClick={() => { setJumpYear(currentMonth.getFullYear()); setShowJump(true); }} className="text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-full h-8 w-8">
-                                <Search size={16} />
+                            <Button variant="ghost" size="icon" onClick={() => { setJumpYear(currentMonth.getFullYear()); setShowJump(true); }} className="text-zinc-500 hover:text-white hover:bg-zinc-900 h-8 w-8">
+                                <CalendarDays size={18} />
                             </Button>
                         </div>
                         <Button variant="ghost" onClick={nextMonth} className="px-3 text-zinc-400 hover:text-white border-transparent hover:bg-zinc-900"><ChevronRight size={24} /></Button>
