@@ -32,7 +32,7 @@ export default function CalendarView({ entries, onSelectDate }) {
                         <Button variant="ghost" onClick={prevMonth} className="px-3 text-zinc-400 hover:text-white border-transparent hover:bg-zinc-900"><ChevronLeft size={24} /></Button>
                         <div className="flex items-center gap-2">
                             <h2 className="text-3xl font-semibold tracking-tight text-white">{format(currentMonth, "MMMM yyyy")}</h2>
-                            <Button variant="ghost" size="icon" onClick={() => { setJumpYear(currentMonth.getFullYear()); setShowJump(true); }} className="text-zinc-500 hover:text-white hover:bg-transparent h-8 w-8">
+                            <Button variant="ghost" size="icon" onClick={() => { setJumpYear(currentMonth.getFullYear()); setShowJump(true); }} className="text-zinc-500 hover:text-white hover:bg-transparent h-8 w-8 border-none">
                                 <CalendarDays size={18} />
                             </Button>
                         </div>
