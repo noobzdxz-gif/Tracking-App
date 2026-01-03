@@ -164,7 +164,10 @@ function App() {
         <div className="flex flex-col min-h-screen bg-black text-zinc-100 p-4 font-sans max-w-5xl mx-auto selection:bg-zinc-800">
             {/* Header */}
             <header className="sticky top-0 z-50 bg-black/80 backdrop-blur-md flex justify-between items-center mb-10 border-b border-zinc-800 pb-4 pt-4 -mx-4 px-4">
-                <h1 className="text-3xl font-semibold tracking-tight text-white flex items-center gap-2">
+                <h1
+                    className="text-3xl font-semibold tracking-tight text-white flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => { setSelectedDate(format(new Date(), 'yyyy-MM-dd')); setCurrentView('today'); }}
+                >
                     TRACKER
                 </h1>
                 <div className="flex gap-4 items-center">
