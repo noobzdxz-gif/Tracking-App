@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { format, parse, differenceInMinutes, parseISO, isValid } from 'date-fns';
 import { Clock, DollarSign, Plus, Check, X, Edit2, Trash2, Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,39 @@ const parseSmartTime = (input) => {
     return null;
 };
 
+// Helper: Suggestion Dropdown
+const SuggestionList = ({ options, value, onSelect, visible }) => {
+    if (!visible || !options || options.length === 0) return null;
+
+    const filtered = options.filter(opt =>
+        opt.toLowerCase().includes((value || '').toLowerCase()) && opt !== value
+    );
+
+    if (filtered.length === 0) return null;
+
+    return (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-800 rounded-md shadow-lg z-50 max-h-48 overflow-y-auto">
+            {filtered.map((opt, i) => (
+                <button
+                    key={i}
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                    onMouseDown={(e) => {
+                        e.preventDefault(); // Prevent blur before click
+                        onSelect(opt);
+                    }}
+                >
+                    {opt}
+                </button>
+            ))}
+        </div>
+    );
+};
+
 export default function DayDetailView({ date, data, onSave, onDelete, isToday, savedOptions, onSaveOption }) {
+    // UI State
+    const [activeField, setActiveField] = useState(null); // 'timeTask', 'expDesc'
+
     // Time Form
     const [editingTimeId, setEditingTimeId] = useState(null);
     const [timeTask, setTimeTask] = useState('');
@@ -143,14 +175,22 @@ export default function DayDetailView({ date, data, onSave, onDelete, isToday, s
                             <div className="flex gap-2 items-center">
                                 <div className="relative flex-grow">
                                     <Input
-                                        list="expense-options"
                                         placeholder="Description"
                                         value={expDesc}
                                         onChange={e => setExpDesc(e.target.value)}
+                                        onFocus={() => setActiveField('expDesc')}
+                                        onBlur={() => setActiveField(null)}
+                                        autoComplete="off"
                                     />
-                                    <datalist id="expense-options">
-                                        {savedOptions.expense.map((opt, i) => <option key={i} value={opt} />)}
-                                    </datalist>
+                                    <SuggestionList
+                                        options={savedOptions.expense}
+                                        value={expDesc}
+                                        visible={activeField === 'expDesc'}
+                                        onSelect={(val) => {
+                                            setExpDesc(val);
+                                            setActiveField(null);
+                                        }}
+                                    />
                                 </div>
                                 <Button type="button" onClick={() => onSaveOption('expense', expDesc)} className="px-2 border-zinc-800 text-zinc-400 hover:text-white" title="Save as default">
                                     <Bookmark size={18} />
@@ -206,16 +246,24 @@ export default function DayDetailView({ date, data, onSave, onDelete, isToday, s
                         <form onSubmit={handleTimeSubmit} className={`flex flex-col gap-3 mb-6 p-4 rounded-lg border border-dashed ${editingTimeId ? 'border-yellow-600/50 bg-yellow-900/5' : 'border-zinc-800 bg-zinc-900/20'}`}>
                             {editingTimeId && <div className="text-xs font-medium text-yellow-500 uppercase mb-1">Editing Entry</div>}
                             <div className="flex gap-2 items-center">
-                                <div className="flex-grow">
+                                <div className="relative flex-grow">
                                     <Input
-                                        list="time-options"
                                         placeholder="Task description..."
                                         value={timeTask}
                                         onChange={e => setTimeTask(e.target.value)}
+                                        onFocus={() => setActiveField('timeTask')}
+                                        onBlur={() => setActiveField(null)}
+                                        autoComplete="off"
                                     />
-                                    <datalist id="time-options">
-                                        {savedOptions.time.map((opt, i) => <option key={i} value={opt} />)}
-                                    </datalist>
+                                    <SuggestionList
+                                        options={savedOptions.time}
+                                        value={timeTask}
+                                        visible={activeField === 'timeTask'}
+                                        onSelect={(val) => {
+                                            setTimeTask(val);
+                                            setActiveField(null);
+                                        }}
+                                    />
                                 </div>
                                 <Button type="button" onClick={() => onSaveOption('time', timeTask)} className="px-2 border-zinc-800 text-zinc-400 hover:text-white" title="Save as default">
                                     <Bookmark size={18} />
