@@ -43,9 +43,9 @@ export default function CalendarView({ entries, onSelectDate }) {
                                 {hasData && <div className="h-1.5 w-1.5 bg-white rounded-full"></div>}
                             </div>
                             {hasData && isSelectedMonth && (
-                                <div className="mt-2 space-y-1 text-xs hidden md:block">
-                                    {dayData.time.length > 0 && <div className="flex items-center gap-1 text-zinc-400"><Clock size={10} /> <span>{dayData.time.reduce((acc, t) => acc + t.duration, 0).toFixed(1)}h</span></div>}
-                                    {dayData.expense.length > 0 && <div className="flex items-center gap-1 text-green-500/80"><DollarSign size={10} /> <span>${dayData.expense.reduce((acc, e) => acc + e.amount, 0).toFixed(0)}</span></div>}
+                                <div className="mt-1 md:mt-2 space-y-0.5 md:space-y-1 text-[10px] md:text-xs">
+                                    {dayData.time.length > 0 && <div className="flex items-center gap-1 text-zinc-400"><Clock size={8} className="md:w-[10px] md:h-[10px]" /> <span className="truncate">{dayData.time.reduce((acc, t) => acc + t.duration, 0).toFixed(1)}h</span></div>}
+                                    {dayData.expense.length > 0 && <div className="flex items-center gap-1 text-green-500/80"><DollarSign size={8} className="md:w-[10px] md:h-[10px]" /> <span className="truncate">${dayData.expense.reduce((acc, e) => acc + e.amount, 0).toFixed(0)}</span></div>}
                                 </div>
                             )}
                         </div>
